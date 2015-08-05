@@ -247,6 +247,7 @@ namespace UnitySpineImporter{
 				slot.name = spineSlot.name;
 				slot.color = hexStringToColor32(spineSlot.color);
 				slot.gameObject = go;
+				slot.colorControl = go.AddComponent<SlotColorControler>( );
 				slot.defaultAttachmentName = spineSlot.attachment;
 				slotByName.Add(slot.name, slot);
 			}
@@ -267,6 +268,7 @@ namespace UnitySpineImporter{
 			float ratio = 1.0f / (float) pixelsPerUnit;
 			skins = new List<Skin>();
 			attachmentGOByNameBySlot= new AttachmentGOByNameBySlot();
+
 			foreach(KeyValuePair<string, SpineSkinSlots>kvp in spineData.skins){
 				string skinName = kvp.Key;
 				Skin skin = new Skin();
@@ -286,6 +288,7 @@ namespace UnitySpineImporter{
 					skinSlot.name = slotName;
 					skinSlot.gameObject = slotGO;
 					List<SkinSlotAttachment> attachmentList = new List<SkinSlotAttachment>();
+
 					foreach(KeyValuePair<string, SpineSkinAttachment> kvp3 in spineData.skins[skinName][slotName]){
 						string              attachmenName	= kvp3.Key;
 						SkinSlotAttachment attachment = new SkinSlotAttachment();
@@ -328,6 +331,7 @@ namespace UnitySpineImporter{
 						// -
 						if (spineAttachment.type.Equals("region")){
 							SpriteRenderer sr = spriteGO.AddComponent<SpriteRenderer>();
+							slot.colorControl.stor( sr );
 							sr.sprite = sprite;
 							spriteGO.transform.localPosition = getAttachmentPosition(spineAttachment, ratio, 0);
 							spriteGO.transform.localRotation = getAttachmentRotation(spineAttachment, spriteByName.rotatedSprites.Contains(sprite));
@@ -355,11 +359,24 @@ namespace UnitySpineImporter{
 				skin.slots = slotList.ToArray();
 				skins.Add(skin);
 			}
+
+			foreach ( KeyValuePair<string, Slot> p in slotByName )
+				p.Value.colorControl.init( );
 		}
 
 
-		public static SkinController addSkinController(GameObject gameObject, SpineData spineData, List<Skin> allSkins, Dictionary<string, Slot> slotByName){
+		public static SkinController addSkinController(GameObject gameObject, SpineData spineData, List<Skin> allSkins, Dictionary<string, Slot> slotByName, Dictionary<string, GameObject> boneGOByName){
 			SkinController sk = gameObject.AddComponent<SkinController>();
+			List< GameObject >	objts = new List< GameObject > ( );
+			List< string >	names = new List<string>( );
+			foreach ( KeyValuePair<string, GameObject> kvp in boneGOByName) {
+				objts.Add( kvp.Value );
+				names.Add( kvp.Key );
+			}
+
+			sk.bones = objts.ToArray( );
+			sk.bonesName = names.ToArray( );
+
 			List<Skin> skins = new List<Skin>();
 			Skin defaultSkin = null;
 			foreach(Skin skin in allSkins){
@@ -419,12 +436,14 @@ namespace UnitySpineImporter{
 				if (spineAnimation.bones!=null)
 					addBoneAnimationToClip(animationClip,spineAnimation.bones, spineData, boneGOByName, ratio);
 				if (spineAnimation.slots!=null)
-					addSlotAnimationToClip(animationClip, spineAnimation.slots, spineData, skinList, attachmentGOByNameBySlot);
+					addSlotAnimationToClip(animationClip, spineAnimation.slots, spineData, animationName, skinList, attachmentGOByNameBySlot);
 
 				if ( spineAnimation.events != null )
 					AddEvents( animationClip, spineAnimation.events, animationName );
-				if (spineAnimation.draworder!=null)
-					addDrawOrderAnimation( animationClip, spineAnimation.draworder, spineData, zStep, animationName, slotByName ); 
+
+				if ( spineAnimation.drawOrder != null ) {
+					addDrawOrderAnimation( animationClip, spineAnimation.drawOrder, spineData, zStep, animationName, slotByName );
+				}
 
 				if (updateCurve){
 					EditorUtility.SetDirty(animationClip);
@@ -532,11 +551,15 @@ namespace UnitySpineImporter{
 
 			Dictionary< string, AnimationCurve > Curvs = new Dictionary<string, AnimationCurve>( );
 
+			bool addFirstKey = ( orderAnimation.Count != 0 && orderAnimation[ 0 ].time > 0.0f );
+
 			foreach ( KeyValuePair<string, int> p in spineData.slotOrder ) {
 				BaseSlotOrder[ p.Value ] = p.Key;
-				AnimationCurve Curv = new AnimationCurve();
-				Keyframe keyFrame = new Keyframe( 0.0f, ( - p.Value ) * zStep );
-				Curv.AddKey( keyFrame );
+				AnimationCurve Curv = new AnimationCurve( );
+				if ( addFirstKey ) {
+					Keyframe keyFrame = new Keyframe( 0.0f, ( -p.Value ) * zStep );
+					Curv.AddKey( keyFrame );
+				}
 				Curvs[ p.Key ] = Curv;
 			}
 
@@ -599,6 +622,7 @@ namespace UnitySpineImporter{
 		public static void addSlotAnimationToClip(AnimationClip                          clip, 
 		                                          Dictionary<string, SpineSlotAnimation> slotsAnimation,
 		                                          SpineData                              spineData,
+												  string								 animName,
 												  List<Skin>							 skinList,
 		                                          AttachmentGOByNameBySlot               attachmentGOByNameBySlot)
 		{
@@ -674,11 +698,6 @@ namespace UnitySpineImporter{
 					AnimationCurve Curv_G = new AnimationCurve( );
 					AnimationCurve Curv_B = new AnimationCurve( );
 					AnimationCurve Curv_A = new AnimationCurve( );
-					Keyframe startKeyFrame = new Keyframe( 0.0f, 1.0f );
-					Curv_R.AddKey( startKeyFrame );
-					Curv_G.AddKey( startKeyFrame );
-					Curv_B.AddKey( startKeyFrame );
-					Curv_A.AddKey( startKeyFrame );
 
 					JsonData[] curveData = new JsonData[ slotAnimation.color.Count ];
 					for( int i = 0 ; i != slotAnimation.color.Count ;i++ ) {
@@ -700,28 +719,45 @@ namespace UnitySpineImporter{
 						curveData[ i ] = color.curve;
 					}
 
+					if ( Curv_R.keys[ 0 ].time > 0.0f ) {
+						Keyframe startKeyFrame = new Keyframe( 0.0f, 1.0f );
+						Curv_R.AddKey( startKeyFrame );
+						Curv_G.AddKey( startKeyFrame );
+						Curv_B.AddKey( startKeyFrame );
+						Curv_A.AddKey( startKeyFrame );
+					}
+
 					setTangents( Curv_R, curveData );
 					setTangents( Curv_G, curveData );
 					setTangents( Curv_B, curveData );
 					setTangents( Curv_A, curveData );
 
+					bool fast = true;
 					for ( int i = 0; i != skinList.Count; i++ ) {
 						if ( skinList[ i ].containsSlot( slotName ) ) {
 							SkinSlot skinSlot = skinList[ i ][ slotName ];
-							for ( int j = 0; j != skinSlot.attachments.Length; j++ ) {
-								SpriteRenderer sprite = skinSlot.attachments[ j ].sprite;
-								if ( sprite != null ) {
-									string spritePath = skinSlot.attachments[ j ].ObPath;
-									AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.r" ), Curv_R );
-									AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.g" ), Curv_G );
-									AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.b" ), Curv_B );
-									AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.a" ), Curv_A );
+
+							if ( fast ) {
+								string SlotPath = spineData.slotPathByName[ skinSlot.name ];
+
+								AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( SlotPath, typeof( SlotColorControler ), "Color.r" ), Curv_R );
+								AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( SlotPath, typeof( SlotColorControler ), "Color.g" ), Curv_G );
+								AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( SlotPath, typeof( SlotColorControler ), "Color.b" ), Curv_B );
+								AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( SlotPath, typeof( SlotColorControler ), "Color.a" ), Curv_A );
+							} else {
+								for ( int j = 0; j != skinSlot.attachments.Length; j++ ) {
+									SpriteRenderer sprite = skinSlot.attachments[ j ].sprite;
+									if ( sprite != null ) {
+										string spritePath = skinSlot.attachments[ j ].ObPath;
+										AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.r" ), Curv_R );
+										AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.g" ), Curv_G );
+										AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.b" ), Curv_B );
+										AnimationUtility.SetEditorCurve( clip, EditorCurveBinding.FloatCurve( spritePath, typeof( SpriteRenderer ), "m_Color.a" ), Curv_A );
+									}
 								}
 							}
 						}
 					}
-
-					Debug.LogWarning("slot color animation is not supported yet");
 				}
 			}
 		}
@@ -1000,6 +1036,7 @@ namespace UnitySpineImporter{
 					AnimationUtility.SetEditorCurve(clip,EditorCurveBinding.FloatCurve(bonePath,typeof(Transform),"m_LocalRotation.z"), localRotationZ);
 					AnimationUtility.SetEditorCurve(clip,EditorCurveBinding.FloatCurve(bonePath,typeof(Transform),"m_LocalRotation.w"), localRotationW);
 
+					clip.EnsureQuaternionContinuity( );
 				} 
 
 				if (boneAnimation.scale != null && boneAnimation.scale.Count > 0){
@@ -1061,13 +1098,13 @@ namespace UnitySpineImporter{
 			Animator animator = animatedObject.GetComponent<Animator>();
 			if ( animator == null)
 				animator = animatedObject.AddComponent<Animator>();
-			AnimatorController animatorController = AnimatorController.GetEffectiveAnimatorController(animator);
+			UnityEditor.Animations.AnimatorController animatorController = UnityEditor.Animations.AnimatorController.GetEffectiveAnimatorController(animator);
 			if (animatorController == null)
 			{
 				string path =  Path.GetDirectoryName( AssetDatabase.GetAssetPath(newClip)) +"/"+animatedObject.name+".controller";
 
-             	AnimatorController controllerForClip = AnimatorController.CreateAnimatorControllerAtPathWithClip(path, newClip);
-				AnimatorController.SetAnimatorController(animator, controllerForClip);
+             	UnityEditor.Animations.AnimatorController controllerForClip = UnityEditor.Animations.AnimatorController.CreateAnimatorControllerAtPathWithClip(path, newClip);
+				UnityEditor.Animations.AnimatorController.SetAnimatorController(animator, controllerForClip);
 				if (controllerForClip != null)
 					return newClip;
 				else
@@ -1075,7 +1112,7 @@ namespace UnitySpineImporter{
 			}
 			else
 			{
-				AnimatorController.AddAnimationClipToController(animatorController, newClip);
+				UnityEditor.Animations.AnimatorController.AddAnimationClipToController(animatorController, newClip);
 				return newClip;
 			}
 		}

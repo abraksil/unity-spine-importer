@@ -66,7 +66,7 @@ namespace UnitySpineImporter{
 					GameObject rootGO = SpineUtil.buildSceleton(name, spineData, pixelsPerUnit, zStep, out boneGOByName, out slotByName);
 					rootGO.name = name;
 					SpineUtil.addAllAttahcmentsSlots(spineData, spriteByName, slotByName, pixelsPerUnit, out skins, out attachmentGOByNameBySlot);
-					SkinController sk = SpineUtil.addSkinController(rootGO, spineData, skins, slotByName);
+					SkinController sk = SpineUtil.addSkinController( rootGO, spineData, skins, slotByName, boneGOByName );
 					if (animationImportType == AnimationImportType.MECANIM){
 						Animator animator = SpineUtil.addAnimator(rootGO);
 						if (buildAvatarMask)
@@ -74,9 +74,10 @@ namespace UnitySpineImporter{
 					}
 
 					ModelImporterAnimationType modelImporterAnimationType = getModelImporterAnimationType();
-					if (spineData.animations !=null && spineData.animations.Count > 0)
-						SpineUtil.addAnimation(rootGO, directory, spineData, boneGOByName, slotByName, attachmentGOByNameBySlot, skins,
+					if ( spineData.animations != null && spineData.animations.Count > 0 ) {
+						SpineUtil.addAnimation( rootGO, directory, spineData, boneGOByName, slotByName, attachmentGOByNameBySlot, skins,
 											   pixelsPerUnit, zStep, modelImporterAnimationType, updateResources );
+					}
 					sk.showDefaulSlots();
 					SpineUtil.buildPrefab(rootGO, directory, name);
 					GameObject.DestroyImmediate(rootGO);

@@ -11,8 +11,8 @@ namespace UnitySpineImporter{
 		public string defaultAttachmentName;
 		public Color32? color;
 		public GameObject gameObject;
+		public SlotColorControler colorControl;
 		public Attachment[] attachments;
-
 
 		Dictionary<string, Attachment> _attachmentByName;
 		public Dictionary<string, Attachment> attachmentByName{
@@ -50,6 +50,7 @@ namespace UnitySpineImporter{
 
 		public void showAttachment(string attachmentName){
 			hideAllAttachments();
+			if ( !attachmentByName.ContainsKey( attachmentName ) ) Debug.Log( "Nie ma tkiego attachmanta!! " + attachmentName );
 			attachmentByName[attachmentName].gameObject.SetActive(true);
 		}
 
