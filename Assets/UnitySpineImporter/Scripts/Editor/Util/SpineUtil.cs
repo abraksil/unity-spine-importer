@@ -7,7 +7,7 @@ using System;
 using UnityEditorInternal;
 using CurveExtended;
 using LitJson;
-using System.Reflection;
+using UnityEditor.Animations;
 
 namespace UnitySpineImporter{
 	public class AtlasImageNotFoundException: System.Exception{
@@ -47,7 +47,7 @@ namespace UnitySpineImporter{
 		}
 
 		public static void builAvatarMask(GameObject gameObject, SpineData spineData, Animator animator, string directory, string name){
-			UnityEngine.Avatar avatar = AvatarBuilder.BuildGenericAvatar(gameObject,"");
+			Avatar avatar = AvatarBuilder.BuildGenericAvatar(gameObject,"");
 			animator.avatar = avatar;
 			AvatarMask avatarMask = new AvatarMask();
 			string[] transofrmPaths = getTransformPaths(gameObject, spineData);
@@ -85,12 +85,8 @@ namespace UnitySpineImporter{
 		static void fixTextureSize(string imagePath){			 
 			TextureImporter importer =  TextureImporter.GetAtPath(imagePath) as TextureImporter;
 			if (importer != null) {
-				object[] args = new object[2] { 0, 0 };
-				MethodInfo mi = typeof(TextureImporter).GetMethod("GetWidthAndHeight", BindingFlags.NonPublic | BindingFlags.Instance);
-				mi.Invoke(importer, args);
-				
-				int width = (int)args[0];
-				int height = (int)args[1];
+				int width, height;
+				UnityInternalMethods.GetTextureSize(importer, out width, out height);
 
 				int max = Mathf.Max(width,height);
 				if (max > 4096){
@@ -290,7 +286,7 @@ namespace UnitySpineImporter{
 					List<SkinSlotAttachment> attachmentList = new List<SkinSlotAttachment>();
 
 					foreach(KeyValuePair<string, SpineSkinAttachment> kvp3 in spineData.skins[skinName][slotName]){
-						string              attachmenName	= kvp3.Key;
+						string              attachmenName = kvp3.Key;
 						SkinSlotAttachment attachment = new SkinSlotAttachment();
 						attachment.name = attachmenName;
 
@@ -299,7 +295,6 @@ namespace UnitySpineImporter{
 						// - create skined object or direct GO for default skin
 						Sprite     sprite;
 						spriteByName.TryGetValue(spineAttachment.name, out sprite);
-						int        drawOrder  = spineData.slotOrder[slotName];
 						
 						GameObject parentGO;
 						GameObject spriteGO;
@@ -411,7 +406,7 @@ namespace UnitySpineImporter{
 										List<Skin>				       skinList,
 		                                int                            pixelsPerUnit,
 										float						   zStep,
-		                                ModelImporterAnimationType     modelImporterAnimationType,
+		                                bool						   useLegacyAnimation,
 		                                bool                           updateResources)
 		{
 			float ratio = 1.0f / (float)pixelsPerUnit;
@@ -431,8 +426,7 @@ namespace UnitySpineImporter{
 						updateCurve = true;
 					}
 				}
-
-				AnimationUtility.SetAnimationType(animationClip, modelImporterAnimationType);
+				animationClip.legacy = useLegacyAnimation;
 				if (spineAnimation.bones!=null)
 					addBoneAnimationToClip(animationClip,spineAnimation.bones, spineData, boneGOByName, ratio);
 				if (spineAnimation.slots!=null)
@@ -454,10 +448,11 @@ namespace UnitySpineImporter{
 					AssetDatabase.CreateAsset(animationClip, assetPath);
 					AssetDatabase.SaveAssets();
 
-					if (modelImporterAnimationType == ModelImporterAnimationType.Generic)
-						AddClipToAnimatorComponent(rootGO,animationClip);
-					else 
+					if (useLegacyAnimation){
 						AddClipToLegacyAnimationComponent(rootGO, animationClip);
+					} else {
+						AddClipToAnimatorComponent(rootGO,animationClip);
+					}
 				}
 
 			}
@@ -469,16 +464,21 @@ namespace UnitySpineImporter{
 		{
 			List< UnityEngine.AnimationEvent > unityEvents = new List<UnityEngine.AnimationEvent>( );
 			foreach ( JsonData entry in events ) {
-				if ( !entry.IsObject ) Debug.LogError( "WTF JSON!! Event is not an Object??!!" );
+				if ( !entry.IsObject ) 
+					Debug.LogError( "JSON data is wrong. Event is not an Object??!!" );
 				IDictionary entry_dict = entry as IDictionary;
 
 				UnityEngine.AnimationEvent ev = new UnityEngine.AnimationEvent( );
 
-				if ( entry_dict.Contains( "name" ) ) ev.functionName = ( ( string ) entry[ "name" ] );
-				else Debug.LogError( "WTF JSON!! Missing Name in event data: " + animName );
+				if ( entry_dict.Contains( "name" ) ) 
+					ev.functionName = ( ( string ) entry[ "name" ] );
+				else 
+					Debug.LogError( "JSON data is wrong. Missing Name in event data: " + animName );
 
-				if ( entry_dict.Contains( "time" ) ) ev.time = getNumberData( entry[ "time" ], animName );
-				else Debug.LogError( "WTF JSON!! Missing Time in event data: " + animName + " EVENT_NAME: " + ev.functionName );
+				if ( entry_dict.Contains( "time" ) ) 
+					ev.time = getNumberData( entry[ "time" ], animName );
+				else 
+					Debug.LogError( "JSON data is wrong. Missing Time in event data: " + animName + " EVENT_NAME: " + ev.functionName );
 
 				bool ParamAdded = false;
 				if ( entry_dict.Contains( "int" ) ) {
@@ -487,13 +487,15 @@ namespace UnitySpineImporter{
 				}
 
 				if ( entry_dict.Contains( "float" ) ) {
-					if ( ParamAdded ) Debug.LogError( "WTF JSON!! Unity Supports only one event parameter!!!! CLIP NAME: " + animName + " EVENT_NAME: " + entry.ToJson( ) );
+					if ( ParamAdded ) 
+						Debug.LogError( "JSON data is wrong. Unity Supports only one event parameter!!!! CLIP NAME: " + animName + " EVENT_NAME: " + entry.ToJson( ) );
 					ev.floatParameter = getNumberData( entry[ "float" ], animName );
 					ParamAdded = true;
 				}
 
 				if ( entry_dict.Contains( "string" ) ) {
-					if ( ParamAdded ) Debug.LogError( "WTF JSON!! Unity Supports only one event parameter!!!! CLIP NAME: " + animName + " EVENT_NAME: " + entry.ToJson( ) );
+					if ( ParamAdded ) 
+						Debug.LogError( "JSON data is wrong. Unity Supports only one event parameter!!!! CLIP NAME: " + animName + " EVENT_NAME: " + entry.ToJson( ) );
 					ev.stringParameter = ( string ) entry[ "string" ];
 				}
 
@@ -513,7 +515,7 @@ namespace UnitySpineImporter{
 			if ( data.IsInt ) 
 				return ( float )( ( int )data );
 
-			Debug.LogError( "WTF JSON!! Unrecognizable number format!!!! CLIP NAME: " + animName + " JsonData: " + data.ToJson( ) );
+			Debug.LogError( "JSON data is wrong. Unrecognizable number format!!!! CLIP NAME: " + animName + " JsonData: " + data.ToJson( ) );
 			
 			return 0.0f;
 		}
@@ -998,6 +1000,7 @@ namespace UnitySpineImporter{
 					AnimationCurve localRotationW = new AnimationCurve();
 
 					JsonData[] curveData = new JsonData[boneAnimation.rotate.Count];
+					Quaternion baseRotation = Quaternion.identity;
 					for (int i = 0; i < boneAnimation.rotate.Count; i++) {
 						float origAngle = (float)boneAnimation.rotate[i].angle;
 						if (origAngle > 0)
@@ -1019,17 +1022,10 @@ namespace UnitySpineImporter{
 
 					}
 
-					fixAngles  (localRotationX   , curveData);
-					setTangents(localRotationX   , curveData);
-
-					fixAngles  (localRotationY   , curveData);
-					setTangents(localRotationY   , curveData);
-
-					fixAngles  (localRotationZ   , curveData);
-					setTangents(localRotationZ   , curveData);
-
-					fixAngles  (localRotationW   , curveData);
-					setTangents(localRotationW   , curveData);
+					fixAngleCurve  (localRotationX   , curveData, baseRotation.x);
+					fixAngleCurve  (localRotationY   , curveData, baseRotation.y);
+					fixAngleCurve  (localRotationZ   , curveData, baseRotation.z);
+					fixAngleCurve  (localRotationW   , curveData, baseRotation.w);
 
 					AnimationUtility.SetEditorCurve(clip,EditorCurveBinding.FloatCurve(bonePath,typeof(Transform),"m_LocalRotation.x"), localRotationX);
 					AnimationUtility.SetEditorCurve(clip,EditorCurveBinding.FloatCurve(bonePath,typeof(Transform),"m_LocalRotation.y"), localRotationY);
@@ -1066,12 +1062,27 @@ namespace UnitySpineImporter{
 		}
 
 
+
+		static void fixAngleCurve(AnimationCurve animationCurve, JsonData[] curveData, float defSingleStepValue){
+			fixSingleStep(animationCurve, defSingleStepValue);
+			fixAngles    (animationCurve, curveData);
+			setTangents  (animationCurve, curveData);
+		}
+
+		static void fixSingleStep (AnimationCurve animationCurve, float defSingleStepValue)
+		{
+			if (animationCurve.keys.Length == 1 && animationCurve.keys[0].time  != 0.0f){
+				Keyframe key = animationCurve.keys[0];
+				key.time = 0.0f;
+				key.value = defSingleStepValue;
+				animationCurve.AddKey(key);
+			}
+		}
+
 		static void fixAngles(AnimationCurve curve, JsonData[] curveData){
 			if (curve.keys.Length <3)
 				return;
-			int fullTurn = 0;
-			bool forward = true;
-			float currValue, previousValue, diff;
+			float currValue, previousValue;
 			for (int previousI=0, i = 1; i < curve.keys.Length; previousI= i++) {
 				if (curveData[previousI] != null &&  curveData[previousI].IsString &&  ((string)curveData[previousI]).Equals("stepped"))
 					continue;
@@ -1098,7 +1109,9 @@ namespace UnitySpineImporter{
 			Animator animator = animatedObject.GetComponent<Animator>();
 			if ( animator == null)
 				animator = animatedObject.AddComponent<Animator>();
-			UnityEditor.Animations.AnimatorController animatorController = UnityEditor.Animations.AnimatorController.GetEffectiveAnimatorController(animator);
+
+			UnityEditor.Animations.AnimatorController animatorController =  UnityInternalMethods.GetEffectiveAnimatorController(animator);
+
 			if (animatorController == null)
 			{
 				string path =  Path.GetDirectoryName( AssetDatabase.GetAssetPath(newClip)) +"/"+animatedObject.name+".controller";
@@ -1112,7 +1125,7 @@ namespace UnitySpineImporter{
 			}
 			else
 			{
-				UnityEditor.Animations.AnimatorController.AddAnimationClipToController(animatorController, newClip);
+				animatorController.AddMotion((Motion)newClip);
 				return newClip;
 			}
 		}

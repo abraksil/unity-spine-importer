@@ -50,8 +50,8 @@ namespace UnitySpineImporter{
 
 		public void showAttachment(string attachmentName){
 			hideAllAttachments();
-			if ( !attachmentByName.ContainsKey( attachmentName ) ) Debug.Log( "Nie ma tkiego attachmanta!! " + attachmentName );
-			attachmentByName[attachmentName].gameObject.SetActive(true);
+            if ( !attachmentByName.ContainsKey( attachmentName ) ) Debug.Log( "There is no such attachmentName: " + attachmentName );
+			else attachmentByName[attachmentName].gameObject.SetActive(true);
 		}
 
 		public void showDefaultAttachment(){
